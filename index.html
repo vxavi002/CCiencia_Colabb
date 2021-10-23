@@ -60,6 +60,7 @@ embirucu_gbif <- occ_data(scientificName = "Pseudobombax grandiflorum",
 
 ------------------------------------------------------------------------
 
+<<<<<<< HEAD
 <p style="color:red">**DICA!**</p>
 
 👉 Caso queira ver somente quantas ocorrências existem, sem precisar esperar carregar todo o dataset, podemos atribuir um limite. Por exemplo:
@@ -192,6 +193,150 @@ Vamos utilizar esse pacote e marcar como flags os dados suspeitos através de al
 ```{r usando o coordinatecleaner}
 library(CoordinateCleaner)
 
+=======
+<p style="color:red">
+
+**DICA!**
+
+</p>
+
+👉 Caso queira ver somente quantas ocorrências existem, sem precisar esperar carregar todo o dataset, podemos atribuir um limite. Por exemplo:
+
+```{r}
+especies_gbif <- occ_data(scientificName = "Pseudobombax grandiflorum",
+                          hasCoordinate = TRUE,
+                          hasGeospatialIssue=FALSE,
+                          limit=500)
+```
+
+Além disso, se sabemos que a espécie a ser investigada é distribuída mundialmente e nosso objetivo é apenas uma região em particular, podemos atribuir uma variação de coordenadas específicas para isso, como vemos a seguir:
+
+```{r filtrando regioes}
+gbif_data <- occ_data(scientificName = "Pseudobombax grandiflorum", hasCoordinate = TRUE, limit = 20000, decimalLongitude = "-10, 10", decimalLatitude = "35, 55")
+```
+
+------------------------------------------------------------------------
+
+Agora vamos checar as dimensões do dataset:
+
+```{r tamanho do dataset}
+dim(embirucu_gbif)
+dim(embirucu_gbif$data)
+```
+
+Vimos que foram encontradas 283 registros de 118 variáveis.
+
+Ao selecionar apenas o nosso objeto, verificamos no console que o número de registros encontrados é o mesmo número de registros retornados, isto é, 283 após a filtragem. Logo, problemas geoespaciais e sem coordenadas não foram encontrados.
+
+Porém, essa filtragem nos campos de coordenadas e problemas geoespaciais é só o começo e a quantidade de ocorrências são muito grandes. Precisamos avaliar a qualidade desses dados passando por uma filtragem mais refinada.
+
+## Filtrando a qualidade dos dados
+
+Podemos começar pela filtragem do algoritmo do GBIF, individualizando os issues encontrados nas ocorrências e depois verificar que issues são esses no dataset baixado:
+
+```{r checando issues}
+gbif_issues()
+
+issues_gbif <- embirucu_gbif$data$issues %>%
+  strsplit(., "[,]") %>% 
+  unlist() %>%
+  unique()
+
+gbif_issues() %>%
+  data.frame() %>%
+  filter(code%in%issues_gbif)
+```
+
+Precisamos agora selecionar as colunas que nos interessam para verificação das ocorrências:
+
+```{r}
+embirucu_gbif1 <- embirucu_gbif$data %>%
+  dplyr::select(scientificName, gbifID, family, taxonRank, year, decimalLatitude, decimalLongitude,
+                issues, basisOfRecord, occurrenceStatus, 
+                datasetName, continent, locality, habitat, institutionCode, elevation, stateProvince, individualCount)
+```
+
+Já podemos plotar um mapa para visualizar como nossos dados estão dispersos. Temos duas opções:
+
+```{r visualizacao de mapas de distribuicao}
+map("world", xlim = range(embirucu_gbif1$decimalLongitude), ylim = range(embirucu_gbif1$decimalLatitude)) 
+points(embirucu_gbif1[ , c("decimalLongitude", "decimalLatitude")], col= "red", pch = ".")
+```
+
+Podemos especificar as direções das coordenadas em 'xlim' e 'ylim' acima. Entretanto, tais pontos são provavelmente centróides de células de grade (relativamente grandes) nas quais pesquisas particulares foram baseadas, então lembre-se de ajustar a resolução espacial de sua análise de acordo!
+
+Uma outra opção e a que iremos utilizar é:
+
+```{r}
+mapateste <- borders("world", colour="gray50", fill="gray50")
+ggplot()+ coord_fixed()+ mapateste +
+  geom_point(data = embirucu_gbif1, aes(x = decimalLongitude, y = decimalLatitude),
+             colour = "darkred", size = 0.5)+
+  theme_bw()
+```
+
+Por esse mapa, conseguimos identificar alguns pontos fora do centro de distribuição da espécie no Brasil. Vamos, então, seguir com nossa filtragem de qualidade, verificando dados únicos e checando os níveis dos fatores:
+
+```{r}
+embirucu_gbif1 <- embirucu_gbif1 %>% 
+  distinct()
+lapply(embirucu_gbif1, unique)
+```
+
+Bom, tudo certo, aqui terminamos a filtragem de issues pelo algoritmo do gbif. Podemos ainda continuar nosso controle de qualidade dos dados a partir de investigações individuais. Isso será necessário, uma vez que os dados geralmente possuem erros, então a inspeção precisa ser minunciosa.
+
+O próximo passo, então, é verificar registros únicos e remover os que possuem zeros ou são ausentes :
+
+```{r}
+names(embirucu_gbif1)
+sort(unique(embirucu_gbif1$individualCount))
+sort(unique(embirucu_gbif1$occurrenceStatus))
+```
+
+Verificamos que não tem nenhum ponto que corresponde a zero e não há nenhuma ocorrência contendo "ausente". Entretanto, pode estar sendo exibido em outras línguas. Vamos averiguar nas línguas mais comumns para essa espécie. Além disso, temos que nos lembrar que o R discrimina letras maiúsculas de minúsculas:
+
+```{r averiguando dados ausentes}
+absence_rows <- which(embirucu_gbif1$individualCount == 0 | embirucu_gbif1$occurrenceStatus %in% c("absent", "Absent", "ABSENT", "ausente", "Ausente", "AUSENTE"))
+length(absence_rows)
+if (length(absence_rows) > 0) {
+  embirucu_gbif1 <- embirucu_gbif1[-absence_rows, ]
+}
+```
+
+Assim, conseguimos ver que realmente não há ocorrências registradas como "ausente".
+
+Nossa investigação de erros ou problemas nos dados não pode parar por aqui. Precisamos sempre buscar meios de filtrar a qualidade dos dados baixados.
+
+## Filtragens mais refinadas
+
+### **Pacote `scrubr`**
+
+Vamos realizar a filtragem agora a partir do pacote `scrubr`, investigando coordenadas incompletas, imprecisas, impossíveis, improváveis e duplicadas:
+
+```{r filtragem}
+library(scrubr)
+nrow(embirucu_gbif1)
+```
+
+Identificamos 283 ocorrências. Aplicando a filtragem das coordenadas, temos:
+
+```{r}
+embirucu_gbif1 <- coord_incomplete(coord_imprecise(coord_impossible(coord_unlikely(dedup(embirucu_gbif1)))))
+nrow(embirucu_gbif1)
+```
+
+Agora temos 236 ocorrências. Foram eliminadas, então, 47 ocorrências com problemas nas coordenadas.
+
+### **Pacote `CoordinateCleaner`**
+
+Um outro procedimento para controle de qualidade dos dados, e muito comum, é a utilização do pacote `CoordinateCleaner`. Esse pacote possui a função `clean_coordinates`, a qual envolve um grande conjunto de etapas de limpeza automatizadas para sinalizar erros comuns a coleções biológicas.
+
+Vamos utilizar esse pacote e marcar como flags os dados suspeitos através de alguns testes:
+
+```{r usando o coordinatecleaner}
+library(CoordinateCleaner)
+
+>>>>>>> Caminho_22
 flags <- clean_coordinates(
   x = embirucu_gbif1,
   lon = "decimalLongitude",
@@ -286,7 +431,11 @@ embirucu %>%
             opacity = 0.5)
 ```
 
+<<<<<<< HEAD
 A partir desse mapa podemos ver com clareza os pontos no mapa no qual a espécie possui registros de ocorrência.
+=======
+Através desse mapa conseguimos visualizar registros diferentes para a mesma espécie distribuídas em outros pontos fora do Brasil.
+>>>>>>> Caminho_22
 
 ## **Pacote `Plotly`**
 
