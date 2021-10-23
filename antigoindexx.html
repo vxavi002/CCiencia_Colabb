@@ -60,7 +60,11 @@ embirucu_gbif <- occ_data(scientificName = "Pseudobombax grandiflorum",
 
 ------------------------------------------------------------------------
 
-<p style="color:red">**DICA!**</p>
+<p style="color:red">
+
+**DICA!**
+
+</p>
 
 👉 Caso queira ver somente quantas ocorrências existem, sem precisar esperar carregar todo o dataset, podemos atribuir um limite. Por exemplo:
 
@@ -69,6 +73,12 @@ especies_gbif <- occ_data(scientificName = "Pseudobombax grandiflorum",
                           hasCoordinate = TRUE,
                           hasGeospatialIssue=FALSE,
                           limit=500)
+```
+
+Além disso, se sabemos que a espécie a ser investigada é distribuída mundialmente e nosso objetivo é apenas uma região em particular, podemos atribuir uma variação de coordenadas específicas para isso, como vemos a seguir:
+
+```{r filtrando regioes}
+gbif_data <- occ_data(scientificName = "Pseudobombax grandiflorum", hasCoordinate = TRUE, limit = 20000, decimalLongitude = "-10, 10", decimalLatitude = "35, 55")
 ```
 
 ------------------------------------------------------------------------
@@ -286,7 +296,7 @@ embirucu %>%
             opacity = 0.5)
 ```
 
-A partir desse mapa podemos ver com clareza os pontos no mapa no qual a espécie possui registros de ocorrência.
+Através desse mapa conseguimos visualizar registros diferentes para a mesma espécie distribuídas em outros pontos fora do Brasil.
 
 ## **Pacote `Plotly`**
 
