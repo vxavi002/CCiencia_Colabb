@@ -1,0 +1,343 @@
+---
+title: "Atividade Final_Ciência Colab"
+author: "Vanessa Xavier"
+date: "22/10/2021"
+output:
+  html_document:
+    theme: cerulean
+    code_folding: "show"
+    toc: true
+    toc_float: true
+    number_sections: false
+---
+
+```{=html}
+<style>
+
+body {text-align:justify}
+
+</style>
+```
+```{r klippy, echo=FALSE, include=TRUE}
+klippy::klippy(position = c("top", "right"),
+  color = "auto",
+  tooltip_message = "Copy code",
+  tooltip_success = "Copied!")
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+# ***Pseudobombax grandiflorum*** **(Cav.) A. Robyns**
+
+*Pseudobombax grandiflorum* (Cav.) A. Robyns pertence à família Malvaceae e é popularmente conhecida como embiruçu. A espécie apresenta porte arbóreo com caráter decíduo e apresenta flores atrativas sendo considerada ornamental (Carvalho, 2008). Além disso, a espécie tem ampla distribuição e está presente em *inselbergs*, vegetação de restingas, além de florestas estacionais e ombrófilas, apresentando uma alta plasticidade fenotípica (Sultan, 2003).
+
+Nesta atividade iremos acessar o banco de dados do GBIF para obter informações de distribuição e ocorrências dessa espécie através do software R, plotar alguns gráficos que podem ser interessantes para fins de estudo, além de saber filtrar a qualidade dos dados obtidos.
+
+<center>
+
+[![](5635877d045a1479b7f7b07982c85b7b.jpg "P. grandiflorum"){width="428"}](https://i.pinimg.com/564x/56/35/87/5635877d045a1479b7f7b07982c85b7b.jpg)
+
+</center>
+
+# Acessando o banco de dados
+
+Antes de acessar o banco de dados do GIBF precisamos instalar e acessar alguns pacotes. São eles: `tidyverse`, `rgbif`, `scrubr`, `maps`, `leaflet`.
+
+Para já começarmos a filtrar bem nossos dados, vamos selecionar apenas ocorrências da espécie que possuam coordenadas e sem problemas geoespaciais:
+
+```{r carregando pacotes e acessando os dados}
+library(tidyverse)
+library(rgbif)
+library(maps)
+
+embirucu_gbif <- occ_data(scientificName = "Pseudobombax grandiflorum", 
+                        hasCoordinate = TRUE,
+                        hasGeospatialIssue=FALSE)
+```
+
+------------------------------------------------------------------------
+
+<p style="color:red">
+
+**DICA!**
+
+</p>
+
+👉 Caso queira ver somente quantas ocorrências existem, sem precisar esperar carregar todo o dataset, podemos atribuir um limite. Por exemplo:
+
+```{r eval=FALSE, include=FALSE}
+especies_gbif <- occ_data(scientificName = "Pseudobombax grandiflorum",
+                          hasCoordinate = TRUE,
+                          hasGeospatialIssue=FALSE,
+                          limit=500)
+```
+
+Além disso, se sabemos que a espécie a ser investigada é distribuída mundialmente e nosso objetivo é apenas uma região em particular, podemos atribuir uma variação de coordenadas específicas para isso, como vemos a seguir:
+
+```{r filtrando regioes, eval=FALSE, include=FALSE}
+gbif_data <- occ_data(scientificName = "Pseudobombax grandiflorum", hasCoordinate = TRUE, limit = 20000, decimalLongitude = "-10, 10", decimalLatitude = "35, 55")
+```
+
+------------------------------------------------------------------------
+
+Agora vamos checar as dimensões do dataset:
+
+```{r tamanho do dataset}
+dim(embirucu_gbif)
+dim(embirucu_gbif$data)
+```
+
+Vimos que foram encontradas 283 registros de 118 variáveis.
+
+Ao selecionar apenas o nosso objeto, verificamos no console que o número de registros encontrados é o mesmo número de registros retornados, isto é, 283 após a filtragem. Logo, problemas geoespaciais e sem coordenadas não foram encontrados.
+
+Porém, essa filtragem nos campos de coordenadas e problemas geoespaciais é só o começo e a quantidade de ocorrências são muito grandes. Precisamos avaliar a qualidade desses dados passando por uma filtragem mais refinada.
+
+## Filtrando a qualidade dos dados
+
+Podemos começar pela filtragem do algoritmo do GBIF, individualizando os issues encontrados nas ocorrências e depois verificar que issues são esses no dataset baixado:
+
+```{r checando issues}
+gbif_issues()
+
+issues_gbif <- embirucu_gbif$data$issues %>%
+  strsplit(., "[,]") %>% 
+  unlist() %>%
+  unique()
+
+gbif_issues() %>%
+  data.frame() %>%
+  filter(code%in%issues_gbif)
+```
+
+Precisamos agora selecionar as colunas que nos interessam para verificação das ocorrências:
+
+```{r}
+embirucu_gbif1 <- embirucu_gbif$data %>%
+  dplyr::select(scientificName, gbifID, family, taxonRank, year, decimalLatitude, decimalLongitude,
+                issues, basisOfRecord, occurrenceStatus, 
+                datasetName, continent, locality, habitat, institutionCode, elevation, stateProvince, individualCount)
+```
+
+Já podemos plotar um mapa para visualizar como nossos dados estão dispersos. Temos duas opções:
+
+```{r visualizacao de mapas de distribuicao}
+map("world", xlim = range(embirucu_gbif1$decimalLongitude), ylim = range(embirucu_gbif1$decimalLatitude)) 
+points(embirucu_gbif1[ , c("decimalLongitude", "decimalLatitude")], col= "red", pch = ".")
+```
+
+Podemos especificar as direções das coordenadas em 'xlim' e 'ylim' acima. Entretanto, tais pontos são provavelmente centróides de células de grade (relativamente grandes) nas quais pesquisas particulares foram baseadas, então lembre-se de ajustar a resolução espacial de sua análise de acordo!
+
+Uma outra opção e a que iremos utilizar é:
+
+```{r}
+mapateste <- borders("world", colour="gray50", fill="gray50")
+ggplot()+ coord_fixed()+ mapateste +
+  geom_point(data = embirucu_gbif1, aes(x = decimalLongitude, y = decimalLatitude),
+             colour = "darkred", size = 0.5)+
+  theme_bw()
+```
+
+Por esse mapa, conseguimos identificar alguns pontos fora do centro de distribuição da espécie no Brasil. Vamos, então, seguir com nossa filtragem de qualidade, verificando dados únicos e checando os níveis dos fatores:
+
+```{r}
+embirucu_gbif1 <- embirucu_gbif1 %>% 
+  distinct()
+lapply(embirucu_gbif1, unique)
+```
+
+Bom, tudo certo, aqui terminamos a filtragem de issues pelo algoritmo do gbif. Podemos ainda continuar nosso controle de qualidade dos dados a partir de investigações individuais. Isso será necessário, uma vez que os dados geralmente possuem erros, então a inspeção precisa ser minunciosa.
+
+O próximo passo, então, é verificar registros únicos e remover os que possuem zeros ou são ausentes :
+
+```{r}
+names(embirucu_gbif1)
+sort(unique(embirucu_gbif1$individualCount))
+sort(unique(embirucu_gbif1$occurrenceStatus))
+```
+
+Verificamos que não tem nenhum ponto que corresponde a zero e não há nenhuma ocorrência contendo "ausente". Entretanto, pode estar sendo exibido em outras línguas. Vamos averiguar nas línguas mais comumns para essa espécie. Além disso, temos que nos lembrar que o R discrimina letras maiúsculas de minúsculas:
+
+```{r averiguando dados ausentes}
+absence_rows <- which(embirucu_gbif1$individualCount == 0 | embirucu_gbif1$occurrenceStatus %in% c("absent", "Absent", "ABSENT", "ausente", "Ausente", "AUSENTE"))
+length(absence_rows)
+if (length(absence_rows) > 0) {
+  embirucu_gbif1 <- embirucu_gbif1[-absence_rows, ]
+}
+```
+
+Assim, conseguimos ver que realmente não há ocorrências registradas como "ausente".
+
+Nossa investigação de erros ou problemas nos dados não pode parar por aqui. Precisamos sempre buscar meios de filtrar a qualidade dos dados baixados.
+
+## Filtragens mais refinadas
+
+### **Pacote `scrubr`**
+
+Vamos realizar a filtragem agora a partir do pacote `scrubr`, investigando coordenadas incompletas, imprecisas, impossíveis, improváveis e duplicadas:
+
+```{r filtragem}
+library(scrubr)
+nrow(embirucu_gbif1)
+```
+
+Identificamos 283 ocorrências. Aplicando a filtragem das coordenadas, temos:
+
+```{r}
+embirucu_gbif1 <- coord_incomplete(coord_imprecise(coord_impossible(coord_unlikely(dedup(embirucu_gbif1)))))
+nrow(embirucu_gbif1)
+```
+
+Agora temos 236 ocorrências. Foram eliminadas, então, 47 ocorrências com problemas nas coordenadas.
+
+### **Pacote `CoordinateCleaner`**
+
+Um outro procedimento para controle de qualidade dos dados, e muito comum, é a utilização do pacote `CoordinateCleaner`. Esse pacote possui a função `clean_coordinates`, a qual envolve um grande conjunto de etapas de limpeza automatizadas para sinalizar erros comuns a coleções biológicas.
+
+Vamos utilizar esse pacote e marcar como flags os dados suspeitos através de alguns testes:
+
+```{r usando o coordinatecleaner}
+library(CoordinateCleaner)
+
+flags <- clean_coordinates(
+  x = embirucu_gbif1,
+  lon = "decimalLongitude",
+  lat = "decimalLatitude",
+  species = "scientificName",
+  tests = c("equal", "gbif","zeros", "seas", "capitals", "centroids", "institutions"))
+
+summary(flags)
+plot(flags, lon = "decimalLongitude", lat = "decimalLatitude")
+```
+
+Os testes identificaram cerca de 13% de ocorrências com flags. Além disso, como vemos no mapa, algumas flags estão distantes do centro de distribuição geográfica da espécie. É necessário uma investigação mais profunda sobre essas ocorrências, mas por hora, vamos apenas remover essas flags para continuarmos esta atividade.
+
+```{r dados limpos restantes}
+dat_cl <- embirucu_gbif1[flags$.summary,]
+
+#Dados marcados com flags
+dat_fl <- embirucu_gbif1[!flags$.summary,]
+```
+
+Sobraram, então, 205 ocorrências filtradas. Vamos salvar esses dados.
+
+Por fim, vamos averiguar a quantidade de registros por estado:
+
+```{r ocorrencias por estado}
+embirucu_gbif1 %>% drop_na(stateProvince) %>% count(stateProvince, sort = TRUE) %>% ggplot(aes(x = reorder(stateProvince, 
+                                                                                              n), y = n, fill = stateProvince)) + geom_bar(stat = "identity", show.legend = FALSE) + 
+  labs(x = "Estados", y = "Número de ocorrências") + coord_flip()
+```
+
+Como podemos ver, o estado da Bahia possui o maior registro de ocorrências da espécie *Pseudobombax grandiflorum*, seguida dos estados do Rio de Janeiro e Espírito Santo. Esse tipo de gráfico se torna interessante para análises mais profundas sobre o habitat da espécie, além de informar regiões com maior quantidade de informações e outras que precisam ser melhor investigadas.
+
+# **Mapas interativos**
+
+## **Pacote `leaflet`**
+
+Plotamos alguns mapas do decorrer do processo para termos uma ideia da distribuição dos dados da espécie. Porém, esses mapas não são interativos. Para realizar mapas interativos e, posteriormente, passar para a versão em html, podemos utilizar o pacote `leaflet`.
+
+Os procedimentos são os mesmos para filtragem de dados, selecionamos as variáveis a serem investigadas e plotamos o mapa como mostra o script abaixo:
+
+```{r usando o leaflet}
+library(tidyverse)
+library(rgbif)
+
+# Verificamos as ocorrências
+embirucu_gbif_ok <- occ_data(scientificName = "Pseudobombax grandiflorum", 
+                           hasCoordinate = TRUE,
+                           hasGeospatialIssue = FALSE)
+# checando alguns issues
+issues_gbif <- embirucu_gbif_ok$data$issues %>% 
+  unique() %>% 
+  strsplit(., "[,]") %>% 
+  unlist()
+
+gbif_issues() %>% 
+  data.frame() %>% 
+  filter(code %in% issues_gbif)
+
+# selecionando variáveis de interesse
+embirucu <- embirucu_gbif_ok$data %>%
+  dplyr::select(scientificName, decimalLatitude, decimalLongitude) %>% 
+  distinct()
+
+library(leaflet)
+
+#Conferindo o mapa
+embirucu %>% 
+  leaflet() %>% 
+  addTiles() %>% 
+  addMarkers(~decimalLongitude,
+             ~decimalLatitude, label = ~as.character(decimalLongitude))
+```
+
+A seguir, precisamos ajustar as configurações do mapa, como cores da paleta, inserção e posição da legenda:
+
+```{r configurando o mapa leaflet}
+pal <- colorFactor(palette = "magma", domain = unique(embirucu$scientificName))
+
+embirucu %>% 
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircleMarkers(~decimalLongitude,
+                   ~decimalLatitude,
+                   radius = 5,
+                   label = ~as.character(scientificName),
+                   color = ~pal(embirucu$scientificName),
+                   stroke = FALSE, fillOpacity = 0.5) %>% 
+  addLegend('bottomright', 
+            colors = unique(pal(embirucu$scientificName)), 
+            labels = unique(embirucu$scientificName),
+            title = 'Espécie',
+            opacity = 0.5)
+```
+
+## **Pacote `Plotly`**
+
+Utilizaremos o pacote `Plotly` para averiguar a distribuição de ocorrências em certas latitudes:
+
+```{r}
+library(plotly)
+
+
+cc <- embirucu %>% 
+  mutate(lat = round(decimalLatitude)) %>% 
+  group_by(lat, scientificName) %>%
+  summarise(occ = length(scientificName)) %>%
+  ggplot(aes(y = occ, x = lat, color = scientificName)) +
+  geom_point() +
+  geom_smooth() +
+  theme_classic() +
+  labs(x = "latitude", y = 'ocorrências')
+
+ggplotly(cc)
+```
+
+Aqui observamos que as ocorrências estão mais presentes em latitudes negativas, que corresponde ao Hemisfério Sul, basta passar o cursor nos pontos para exibir as informações.
+
+Um recurso interessante para ser utilizado nas consultas de dados abertos, é a observação das tendências no registro de ocorrências através do tempo. Usaremos o pacote `ggplot2` e o `plotly` para desenharmos um gráfico de linha interativo que nos mostra a quantidade de ocorrências para a espécie no decorrer dos anos.
+
+```{r registros temporais}
+library(tidyverse)
+library(plotly)
+
+embirucu_gbif1 %>% count(year)
+
+out <- embirucu_gbif1 %>% drop_na(year) %>% count(year) %>% ggplot(aes(x = year, 
+                                                                   y = n, group = 1)) + xlim(1910, 2022) + geom_line()
+plotly::ggplotly(out)
+```
+
+Os registros datam desde 1911 e teve maior pico em 2006, com 15 ocorrências registradas. Esse gráfico pode ser interessante para checar as tendências da espécie e a quantidade de informação que possa estar disponível no banco de dados.
+
+------------------------------------------------------------------------
+
+# **Referências bibliográficas**
+
+Carvalho, P., 2008. Embiruçu (*Pseudobombax grandiflorum*). Embrapa Florestas-Circular Técnica (INFOTECA-E).
+
+Sultan, S.E., 2003. Phenotypic plasticity in plants: a case study in ecological development. Evolution & development, 5(1), 25-33.

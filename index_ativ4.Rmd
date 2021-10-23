@@ -1,0 +1,390 @@
+---
+title: "Atividade4"
+author: "Vanessa Xavier"
+date: "18/10/2021"
+output: html_document
+---
+
+```{=html}
+<style>
+
+body {text-align: justify}
+
+</style>
+```
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+## *Byrsonima sericea* DC.
+
+A espécie escolhida para a realização dessa atividade foi a planta *Byrsonima sericea* da família Malpighiaceae. Essa espécie é conhecida popularmente como "murici-da-mata" ou "murici-da-praia". Trata-se de uma espécie nativa, pioneira e possui hábito arbustivo e arbóreo. Além disso, pode ser encontrada em campos rupestres, florestas ciliares, florestas ombrófilas e restingas (Mamede & Francener, 2015).
+
+<center>
+
+[![B. sericea](dsc05904.jpg)](https://appverde.wordpress.com/2015/11/05/murici-byrsonima-sericea/)
+
+</center>
+
+# **ATIVIDADE 4**
+
+O objetivo desta atividade é acessar um banco de dados abertos de ocorrência de espécies (GBIF), resgatar dados referentes à espécie *B. sericea*, inspecioná-los (porque nem tudo que está acessível deve ser 100% confiável), avaliar a qualidade desses dados e, por fim, fazer um mapa demonstrando as ocorrências.
+
+Bom, vamos começar!
+
+## 4.1 Acessando banco de dados abertos
+
+O primeiro passo é acessar o banco de dados abertos através do pacote `tidyverse` para fazer a manipulação dos dados. Esse pacote é formado por um conjunto de pacotes utilizados para manipulação, exploração e visualização de dados.
+
+```{r tidyverse}
+library(tidyverse)
+```
+
+Vamos utilizar, também, o pacote `rgbif` para pesquisar e recuperar dados do GBIF (rede de dados de biodiversidade). O pacote utiliza o código no R em torno da API GBIF para permitir a comunicação entre os dois (R e GBIF), assim dá pra acessar metadados, nome de espécies e ocorrências.
+
+```{r rgbif}
+library(rgbif)
+```
+
+Além disso, podemos utilizar a função `occ_data` para buscar dados de ocorrência de espécies no repositório do GBIF, através do nome científico, número de identificação, país e outros. Para checar tais funções, temos:
+
+```{r occ_data}
+?occ_data
+```
+
+Agora vamos baixar as ocorrências sobre a espécie *Byrsonima sericea* a partir de alguns requisitos: ocorrências que possuem coordenadas e que não possuem problemas geoespaciais.
+
+```{r murici_gbif}
+murici_gbif <- occ_data(scientificName = "Byrsonima sericea", 
+                      hasCoordinate = TRUE,
+                      hasGeospatialIssue=FALSE)
+
+```
+
+Precisamos checar as dimensões e verificar o tamanho do dataset.
+
+```{r dim(murici_gbif)}
+dim(murici_gbif)
+```
+
+```{r dim(murici_gbif$data)}
+dim(murici_gbif$data)
+
+```
+
+Foram encontradas 111 variáveis nesse banco de dados. Além disso, foram encontrados 3.344 registros. Entretanto, com a filtragem de coordenadas e problemas geoespaciais, a quantidade desce para 500 ocorrências (ou seja, muitas ocorrências contendo esses problemas!).
+
+```{r checar os 111 campos}
+murici_gbif$data %>% names
+
+```
+
+## 4.2 Problemas reportados
+
+O repositório possui um sistema automático que identifica certos problemas com os dados, os chamados "issues". Para acionar essa função e checar os issues reportados no algoritmo, temos:
+
+```{r gbif_issues}
+gbif_issues()
+```
+
+As ocorrências possuem uma diversidade de issues. Para individualizar e averiguar melhor os issues da listagem recebida, precisamos utilizar o seguinte código:
+
+```{r issues_gbif}
+issues_gbif <- murici_gbif$data$issues %>%
+  strsplit(., "[,]") %>%
+  unlist() %>%
+  unique()
+```
+
+Lembrando que o argumento `strsplit` serve para separar mais de um issue na mesma ocorrência e, o argumento `unlist` para transformar tudo em vetor.
+
+É preciso, então, averiguar quais são os problemas/issues no dataset que acabamos de baixar.
+
+```{r gbif_issues no dataset}
+gbif_issues() %>%
+  data.frame() %>%
+  filter(code%in%issues_gbif)
+```
+
+A maioria dos issues encontrados estão relacionados com discrepancias entre informações indicadas pelos autores e as levantadas pelo algoritmo de checagem, mas por enquanto não apresentam problemas.
+
+Precisamos agora selecionar variáveis interessantes para a validação dos dados como coordenadas, elevação, nome do dataset, etc.
+
+```{r selecionar variáveis}
+murici_gbif1 <- murici_gbif$data %>%
+    dplyr::select(scientificName, acceptedScientificName, decimalLatitude, decimalLongitude,
+                  issues, basisOfRecord, occurrenceStatus, rightsHolder, 
+                  datasetName, recordedBy, continent, locality, habitat, institutionCode, elevation, stateProvince)
+
+```
+
+Foram encontradas 500 ocorrências de 16 variáveis. Entretanto, é possível que existam ocorrências repetidas, então devemos remover essas observações/ocorrências.
+
+```{r Verificar dados únicos}
+murici_gbif1 <- murici_gbif1 %>% 
+  distinct()
+```
+
+Temos agora 476 ocorrências. Precisamos agora checar todos os valores únicos presentes desses dados. Aplica-se, portanto, a função:
+
+```{r checar níveis dos fatores}
+lapply(murici_gbif1, unique)
+```
+
+Para cada 13 variáveis, é aplicado O `lapply`, um loop para verificar em todas as colunas quais são os valores únicos.
+
+Bom, esses foram os issues já reportados. Mas o que fazer se existirem issues não reportados, e o que fazer para filtrá-los?
+
+## 4.3 Problemas não reportados
+
+É necessário refinar ainda mais as ocorrências, pois podem existir problemas/issues que não foram reportados de forma automática e que podem prejudicar os dados interpretados futuramente. Podemos escolher qual variável podemos selecionar para começar a nossa filtragem. Vamos começar pelas instituições. Lembrando que algumas variáveis, como "locality" nesse caso, podem apresentar inúmeras ocorrências, dificultando a visualização e interpretação do gráfico. Por isso, é necessário explorar essas ocorrências com cada variável, quando possível.
+
+Assim, temos:
+
+```{r checando níveis suspeitos}
+murici_gbif1 %>% 
+  distinct(institutionCode) %>% 
+  pull()
+```
+
+Para melhor visualização das ocorrências por instituição, temos:
+
+```{r institutionCode}
+murici_gbif1 %>%
+  group_by(institutionCode) %>% 
+  summarise(occ = length(scientificName)) %>% 
+  ggplot(aes(occ, y=institutionCode)) +
+  geom_bar(stat = 'identity')
+```
+
+Observamos muitas instituições e universidades que identificaram a espécie *B. sericea*, e todas as ocorrências estão situadas no Brasil. Algumas instituições possuem muitas ocorrências, então podemos averiguar quantas distinções de datasets existem para essas instituições/universidades. Portanto, escolheremos 5 instituições com maiores quantidades de ocorrências para averiguação:
+
+```{r fonte das ocorrências em 5 instituições}
+murici_gbif1 %>% 
+  filter(institutionCode %in% c("VIES", "Universidade Federal de Sergipe", "Universidade Federal da Bahia", "JBRJ", "ALCB")) %>% 
+  distinct(datasetName)
+```
+
+Assim, foram observados que dois datasets se referem à mesma instiuição.
+
+```{r dataset 1}
+murici_gbif1 %>% 
+  filter(datasetName %in% c("RB - Rio de Janeiro Botanical Garden Herbarium Collection"))
+```
+
+Foram observadas 34 ocorrências nesse dataset.
+
+```{r dataset 2}
+murici_gbif1 %>% 
+  filter(datasetName %in% c("Caatinga Biome - RB - Rio de Janeiro Botanical Garden Herbarium Collection"))
+```
+
+Já para este dataset, foi observada apenas 1 ocorrência. Isso pode representar uma ambiguidade para a instituição, ao invés de escolherem apenas um dataset. Mas não representa nenhum problema para a interpretação dos nossos dados.
+
+Logo, não irei definir "Caatinga Biome - RB - Rio de Janeiro Botanical Garden Herbarium Collection" como dataset suspeito pois se trata de uma coleta da mesma instituição com apenas a denominação de dataset diferente, ou seja, continua válida. Entretanto, caso queira remover uma ocorrência que identifique como suspeita (por apresentar algum issue não reportado), basta:
+
+```{r filtrar ocorrências do dataset suspeito}
+murici_gbif_ok <- murici_gbif1 %>% 
+  filter(!datasetName %in% c("Caatinga Biome - RB - Rio de Janeiro Botanical Garden Herbarium Collection"))
+```
+
+Agora, podemos visualizar em um mapa essas ocorrências filtradas para facilitar a nossa interpretação.
+
+```{r pacotes necessários para a plotagem}
+library(ggmap)
+library(maps)
+library(mapdata)
+```
+
+```{r refinamento}
+world <- map_data('world')
+brasil <-map_data('world', region="Brazil")
+```
+
+```{r checar os pontos}
+ggplot() +
+  geom_polygon(data = world, aes(x = long, y = lat, group = group)) +
+  coord_fixed() +
+  theme_classic() +
+  geom_point(data = murici_gbif_ok, aes(x = decimalLongitude, y = decimalLatitude), color = "red") +
+  labs(x = "longitude", y = "latitude", title = expression(italic("Byrsonima sericea")))
+```
+
+Podemos utilizar outra variável para verificação. Como por exemplo, elevação por estado.
+
+```{r checar elevation}
+murici_gbif_ok %>% 
+  ggplot(aes(x = elevation, fill = stateProvince)) +
+  geom_histogram()
+
+ggplot(murici_gbif_ok, aes(x=elevation)) + geom_histogram(bins=10)
+```
+
+A partir deste histograma, vemos que boa parte das ocorrências se concentram a uma elevação entre 0 e 1000 metros. No Rio de Janeiro, por exemplo, a maior distribuição de ocorrências em elevações entre 0 e 1000 metros pode ser explicada pelo relevo e vegetação do estado, isto é, estando presente desde restingas a florestas estacionais (transição entre áreas costeiras e florestas mais adensadas). Mas isso tudo, é claro, são apenas interpretações que necessitam de análises mais minunciosas para serem averiguadas.
+
+Se quisermos diferenciar os pontos por cores no mapa, podemos:
+
+```{r diferenciando pontos}
+ggplot() +
+  geom_polygon(data = world, aes(x = long, y = lat, group = group)) +
+  coord_fixed() +
+  theme_classic() +
+  geom_point(data = murici_gbif_ok, aes(x = decimalLongitude, y = decimalLatitude, color = elevation)) +
+  labs(x = "longitude", y = "latitude", title = expression(italic("Byrsonima sericea")))
+```
+
+Percebe-se que, através da diferenciação de cores dos pontos no mapa, ocorrências em elevações mais baixas estão mais presentes no interior do país. Talvez pela cadeia de montanhas que, da costa para o interior do país, vão sendo substituídas por planícies mais baixas, ainda que ocorram certos cumes, podendo ser afloramentos rochosos. Novamente, apenas suposições que precisam de análises mais robustas.
+
+O próximo passo é salvar os dados tratados para economizar tempo no próximo uso.
+
+```{r salvando os dados tratados}
+write.csv(murici_gbif_ok, "C:/Users/vanes/OneDrive/Documentos/UENF/Doutorado - PPGERN/Disciplinas/Ferramentas em ciência colaborativa e bancos de dados abertos/Atividades/Atividade 4/Murici_dados_salvos_ativ4.csv", row.names = FALSE)
+```
+
+### 4.3.1 Classificação automática de pontos
+
+#### 4.3.1.1 Utilizando uma função caseira
+
+A quantidade de ocorrências disponíveis no banco de dados abertos podem ser inúmeras e, do mesmo modo, os issues/ problemas existentes também podem ser numerosos. Por isso, podemos usar outras ferramentas para refinar essas ocorrências suspeitas com o auxílio de outros pacotes como veremos abaixo, criando nossas próprias funções:
+
+```{r função de classificação de ocorrências suspeitas}
+flag_outlier <- function(df, species)
+{dados <- df %>% 
+    dplyr::filter(scientificName == species); 
+  
+  dados2 <- geosphere::distVincentyEllipsoid(
+    dados %>%
+      summarise(centr_lon = median(decimalLongitude),
+                centr_lat = median(decimalLatitude)),
+    dados %>% 
+      dplyr::select(decimalLongitude, decimalLatitude)
+  ) %>% 
+    bind_cols(dados) %>% 
+    rename(dist_centroid = '...1') %>% 
+    mutate(flag = ifelse(dist_centroid < quantile(dist_centroid, probs = 0.9), "OK",
+                         ifelse(dist_centroid >= quantile(dist_centroid, probs = 0.90) & dist_centroid < quantile(dist_centroid, probs = 0.95), "check > Q90",
+                                ifelse(dist_centroid >= quantile(dist_centroid, probs = 0.95), "check > Q95", "OK"))))
+    print(dados2)}
+```
+
+Em outras palavras, a função acima verifica que, ocorrências que ficarem acima de 90% seriam consideradas outliers do centro de distribuição criado pela função. Logo, poderiam ser consideradas como possíveis dados suspeitos. Para classificar essas ocorrências, temos:
+
+```{r classificando ocorrências}
+marcados <- murici_gbif$data %>% 
+  data.frame() %>% 
+  dplyr::select(scientificName, decimalLongitude, decimalLatitude, datasetName) %>% 
+  distinct() %>% 
+  flag_outlier(., "Byrsonima sericea DC.")
+```
+
+Foram observados alguns flags com outliers. Para visualizar melhor, plotamos, então, um mapa:
+
+```{r mapa}
+ggplot() +
+  geom_polygon(data = brasil, aes(x = long, y = lat, group = group)) +
+  coord_fixed() +
+  theme_classic() +
+  geom_point(data = marcados, 
+             aes(x = decimalLongitude, y = decimalLatitude, 
+                 color = flag)) +
+  theme(legend.title = element_blank()) +
+  labs(x = "longitude", y = "latitude", 
+       title = expression(italic("Byrsonima sericea")))
+```
+
+Pelo mapa plotado, podemos ver que o centro de distribuição da espécie é mesmo na costa (por ex. pode ser em restingas), enquanto que, muito mais ao interior (por ex. Mato Grosso) ou nas extremidades da distribuição, os dados começam a passar o percentil de 95%.
+
+#### 4.3.1.2 Pacote `scrubr`
+
+Um outro pacote que podemos utilizar para o refinamento de ocorrências suspeitas é o `scrubr`. Nele conseguimos reportar problemas com coordenadas com elementos faltantes (`coord_incomplete`), coordenadas impossíveis (`coord_impossible`) e coordenadas duplicadas (`dedup`), por exemplo.
+
+```{r usando os dados com flags}
+library(scrubr)
+
+data_scrubr <- marcados %>% 
+  dframe() %>% 
+  coord_impossible() %>% #coordenadas impossíveis
+  coord_incomplete() %>% #coordenadas incompletas
+  coord_unlikely() %>% #coordenadas improváveis
+  dedup() #coordenadas duplicadas
+
+```
+
+```{r}
+ggplot() +
+  geom_polygon(data = brasil, aes(x = long, y = lat, group = group)) +
+  coord_fixed() +
+  theme_classic() +
+  geom_point(data = data_scrubr, 
+             aes(x = decimalLongitude, y = decimalLatitude), 
+             color = "red") +
+  geom_point(data = marcados %>% 
+               filter(flag != "OK"), 
+             aes(x = decimalLongitude, y = decimalLatitude), 
+             color = "blue", shape = 3) +
+  theme(legend.title = element_blank()) +
+  labs(x = "longitude", y = "latitude", 
+       title = expression(italic("Byrsonima sericea")))
+```
+
+O mapa informa as ocorrências com cruzinha que são prováveis de serem suspeitas. Como mencionado anteriormente, as ocorrências mais distantes do centro de distribuição (dados que passaram do percentil de 95%) foram marcadas.
+
+#### 4.3.1.3 Pacote `CoordinateCleaner`
+
+Um outro pacote que podemos utilizar para refinar ocorrências com problemas, é o `CoordinateCleaner`. Esse pacote coloca flags em ocorrências que potencialmente possuem coordenadas com problemas.
+
+```{r usando o CoordinateCleaner}
+library(CoordinateCleaner)
+
+flags <- clean_coordinates(
+    x = marcados,
+    lon = "decimalLongitude",
+    lat = "decimalLatitude",
+    species = "scientificName",
+    tests = c("equal", "gbif",
+              "zeros", "seas"))
+```
+
+Assim, não foram encontradas ocorrências com problemas de coordenadas iguais, zeradas, por exemplo. Mas foram observados 46 registros suspeitos para "seas".
+
+```{r verificar os pontos}
+summary(flags)
+plot(flags, lon = "decimalLongitude", lat = "decimalLatitude")
+```
+
+Se quisermos filtrar esses registros, temos:
+
+```{r filtrar registros com flags}
+data_cleaned <- marcados[flags$.summary,]
+```
+
+```{r registros que possuem flags}
+data_flagged <- marcados[!flags$.summary,]
+```
+
+Por fim, após a filtragem dos registros com flags (aqueles que possivelmente estão no mar) plotamos o seguinte gráfico:
+
+```{r}
+ggplot() +
+  geom_polygon(data = brasil, aes(x = long, y = lat, group = group)) +
+  coord_fixed() +
+  theme_classic() +
+  geom_point(data = data_cleaned, 
+             aes(x = decimalLongitude, y = decimalLatitude), 
+             color = "red") +
+  geom_point(data = marcados %>% 
+               filter(flag != "OK"), 
+             aes(x = decimalLongitude, y = decimalLatitude), 
+             color = "blue", shape = 3) +
+  theme(legend.title = element_blank()) +
+  labs(x = "longitude", y = "latitude", 
+       title = expression(italic("Byrsonima sericea")))
+```
+
+É possível verificar que essa filtragem mais recente removeu alguns registros que estavam marcados pela filtragem anterior com a função caseira. Desse modo, o refinamento de dados de qualidade pode ser realizado por inúmeros procedimentos. Porém, cabe a nós averiguar se temos ou não que remover todos os dados suspeitos, pois nem sempre isso será necessário.
+
+------------------------------------------------------------------------
+
+#### **Referência bibliográfica:**
+
+Mamede, M. C. H., Francener, A. (2015). *Byrsonima* in Lista de Espécies da Flora do Brasil. Jardim Botânico do Rio de Janeiro. Disponível em: <http://floradobrasil.jbrj.gov.br/jabot/floradobrasil/FB8845> (Acesso: outubro de 2021).
